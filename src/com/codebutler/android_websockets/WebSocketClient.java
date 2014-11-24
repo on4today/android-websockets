@@ -25,6 +25,7 @@ import java.security.KeyManagementException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class WebSocketClient {
     private static final String TAG = "WebSocketClient";
@@ -39,6 +40,7 @@ public class WebSocketClient {
     private HybiParser               mParser;
     private boolean                  mConnected;
 
+    private AtomicInteger mFrameCount = new AtomicInteger();
     private final Object mSendLock = new Object();
 
     private static TrustManager[] sTrustManagers;
@@ -180,6 +182,10 @@ public class WebSocketClient {
         sendFrame(mParser.frame(data));
     }
 
+    public void sendDescartable(byte[] data, int queueSize) {
+        sendDescartableFrame(mParser.frame(data), queueSize);
+    }
+
     public boolean isConnected() {
         return mConnected;
     }
@@ -245,6 +251,27 @@ public class WebSocketClient {
                         OutputStream outputStream = mSocket.getOutputStream();
                         outputStream.write(frame);
                         outputStream.flush();
+                    }
+                } catch (IOException e) {
+                    mListener.onError(e);
+                }
+            }
+        });
+    }
+
+    void sendDescartableFrame(final byte[] frame, final int queueSize) {
+        mFrameCount.incrementAndGet();
+        mHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    synchronized (mSendLock) {
+                        if (mFrameCount.get() == queueSize) {
+                            OutputStream outputStream = mSocket.getOutputStream();
+                            outputStream.write(frame);
+                            outputStream.flush();
+                        }
+                        mFrameCount.decrementAndGet();
                     }
                 } catch (IOException e) {
                     mListener.onError(e);
